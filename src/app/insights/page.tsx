@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { format, isAfter, isBefore, isEqual, subDays, subMonths } from 'date-fns';
+import { format, isAfter, isBefore, isEqual, subDays, subMonths, endOfMonth } from 'date-fns';
 import NavBar from '../components/nav-bar';
 import ExpenseDetail from '../components/expense-detail';
 
@@ -32,6 +32,24 @@ interface Expense {
   };
   date: string;
   location?: string;
+}
+
+// Interface for projection data
+interface ProjectionCategory {
+  name: string;
+  icon: string;
+  currentTotal: number;
+  projectedTotal: number;
+  reasoning: string;
+}
+
+interface ProjectionData {
+  totalProjection: number;
+  analysis: string;
+  categories: ProjectionCategory[];
+  currentDate: string;
+  daysRemaining: number;
+  totalSpentSoFar: number;
 }
 
 export default function InsightsPage() {
@@ -62,9 +80,16 @@ export default function InsightsPage() {
   // State to control visibility of spending by category section
   const [showCategoryBreakdown, setShowCategoryBreakdown] = useState(false);
 
+  // State for expense projections
+  const [projectionData, setProjectionData] = useState<ProjectionData | null>(null);
+  const [loadingProjections, setLoadingProjections] = useState(false);
+  const [projectionError, setProjectionError] = useState<string | null>(null);
+  const [showProjections, setShowProjections] = useState(true);
+
   useEffect(() => {
     if (startDate && endDate) {
       fetchInsightsData();
+      fetchExpenseProjections();
     }
   }, [startDate, endDate]);
 
@@ -225,6 +250,34 @@ export default function InsightsPage() {
     if (startDate && endDate) {
       fetchInsightsData();
       setShowDatePicker(false);
+    }
+  };
+
+  // Fetch expense projections
+  const fetchExpenseProjections = async () => {
+    setLoadingProjections(true);
+    setProjectionError(null);
+    
+    try {
+      const response = await fetch('/api/expense-projections');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch expense projections: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success && data.projections) {
+        setProjectionData(data.projections);
+      } else {
+        throw new Error(data.error || 'Failed to generate projections');
+      }
+    } catch (err: any) {
+      console.error('Error fetching projections:', err);
+      setProjectionError(`Failed to load projections: ${err.message}`);
+      setProjectionData(null);
+    } finally {
+      setLoadingProjections(false);
     }
   };
 
@@ -415,6 +468,154 @@ export default function InsightsPage() {
               )}
             </div>
           </div>
+          
+          {/* Monthly Projections Section */}
+          {!loading && !error && filteredExpenses.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  Monthly Projections
+                </h2>
+                <button
+                  onClick={() => setShowProjections(!showProjections)}
+                  className="flex items-center text-xs text-blue-500 dark:text-blue-400"
+                >
+                  {showProjections ? 'Hide' : 'Show'}
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className={`w-3 h-3 ml-1 transition-transform ${showProjections ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              </div>
+              
+              {showProjections && (
+                <div className="animate-fade-in">
+                  {loadingProjections ? (
+                    <div className="flex flex-col items-center justify-center p-8">
+                      <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                        Generating intelligent projections...
+                      </p>
+                    </div>
+                  ) : projectionError ? (
+                    <div className="p-4 text-center bg-white/60 dark:bg-gray-900/40 rounded-xl">
+                      <p className="text-xs text-red-500">{projectionError}</p>
+                      <button
+                        onClick={fetchExpenseProjections}
+                        className="px-3 py-1.5 mt-3 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  ) : projectionData ? (
+                    <div className="space-y-4">
+                      <div className="p-5 overflow-hidden bg-white dark:bg-gray-900/60 rounded-xl shadow-sm backdrop-blur-sm ring-1 ring-gray-900/5 dark:ring-white/10">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              Expected Total
+                            </h3>
+                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              By end of {format(endOfMonth(new Date()), 'MMMM')}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-lg font-bold text-gray-900 dark:text-white">
+                              ₹{projectionData.totalProjection.toFixed(2)}
+                            </span>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {projectionData.daysRemaining} days remaining
+                            </p>
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3 text-xs text-gray-600 dark:text-gray-400">
+                          {projectionData.analysis}
+                        </div>
+                        
+                        <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Spent so far
+                            </span>
+                            <span className="font-medium text-gray-800 dark:text-gray-200">
+                              ₹{projectionData.totalSpentSoFar.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between mt-1 text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">
+                              Projected additional
+                            </span>
+                            <span className="font-medium text-blue-600 dark:text-blue-400">
+                              ₹{(projectionData.totalProjection - projectionData.totalSpentSoFar).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <h3 className="text-xs font-medium text-gray-700 dark:text-gray-300 mt-4">
+                        Projected Spending by Category
+                      </h3>
+                      
+                      <div className="space-y-3 mt-2">
+                        {projectionData.categories.map((category) => (
+                          <div key={category.name} className="p-4 bg-white/60 dark:bg-gray-900/40 rounded-xl">
+                            <div className="flex items-start">
+                              <div 
+                                className="flex items-center justify-center w-8 h-8 mr-3 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: category.currentTotal > 0 ? 
+                                  categoryData.find(c => c.name === category.name)?.color + '33' : '#9E9E9E33' }}
+                              >
+                                <span className="text-base">{category.icon}</span>
+                              </div>
+                              <div className="flex-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-medium text-gray-800 dark:text-white">
+                                    {category.name}
+                                  </p>
+                                  <div className="text-right">
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                      ₹{category.projectedTotal.toFixed(2)}
+                                    </p>
+                                    {category.currentTotal > 0 && (
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {category.currentTotal.toFixed(2)} spent so far
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                                  {category.reasoning}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-6 text-center bg-white/60 dark:bg-gray-900/40 rounded-xl">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        No projection data available
+                      </p>
+                      <button
+                        onClick={fetchExpenseProjections}
+                        className="px-3 py-1.5 mt-3 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                      >
+                        Generate Projections
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           
           {loading ? (
             <div className="flex flex-col items-center justify-center p-12">

@@ -1,14 +1,54 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import NavBar from './components/nav-bar';
+import { formatDistanceToNow } from 'date-fns';
+
+// Define the expense type
+interface Expense {
+  id: string;
+  description: string;
+  amount: string;
+  categoryId: string;
+  category?: {
+    name: string;
+    icon: string;
+    color: string;
+  };
+  date: string;
+  location?: string;
+}
 
 export default function Home() {
   const [expenseText, setExpenseText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [todayExpenses, setTodayExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch today's expenses
+  const fetchTodayExpenses = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/expenses');
+      if (!response.ok) {
+        throw new Error('Failed to fetch today\'s expenses');
+      }
+      const data = await response.json();
+      setTodayExpenses(data.expenses || []);
+    } catch (err) {
+      console.error('Error fetching today\'s expenses:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch expenses on initial load and after adding a new expense
+  useEffect(() => {
+    fetchTodayExpenses();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +78,9 @@ export default function Home() {
       // Reset form on success
       setExpenseText('');
       
+      // Refresh the expenses list
+      fetchTodayExpenses();
+      
       // Clear success message after 3 seconds
       setTimeout(() => {
         setSuccessMessage(null);
@@ -51,6 +94,15 @@ export default function Home() {
       console.error(err);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    try {
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+    } catch (error) {
+      return 'Just now';
     }
   };
 
@@ -130,17 +182,62 @@ export default function Home() {
             </div>
             
             <div className="space-y-3">
-              {/* Empty state for expenses */}
-              <div className="flex flex-col items-center justify-center p-6 text-center bg-white/60 dark:bg-gray-900/40 rounded-xl">
-                <div className="flex items-center justify-center w-10 h-10 mb-3 bg-gray-100 dark:bg-gray-800 rounded-full">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
+              {loading ? (
+                <div className="flex justify-center p-6">
+                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  No expenses recorded yet
-                </p>
-              </div>
+              ) : todayExpenses.length > 0 ? (
+                todayExpenses.map((expense) => (
+                  <div key={expense.id} className="p-4 bg-white/60 dark:bg-gray-900/40 rounded-xl">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start">
+                        {expense.category && (
+                          <div 
+                            className="flex items-center justify-center w-8 h-8 mr-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: expense.category.color + '33' }}
+                          >
+                            <span className="text-base">{expense.category.icon}</span>
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-sm font-medium text-gray-800 dark:text-white">
+                            {expense.description}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {formatDate(expense.date)}
+                            {expense.location && (
+                              <>
+                                <span className="mx-1.5">•</span>
+                                <span>{expense.location}</span>
+                              </>
+                            )}
+                            {expense.category && (
+                              <>
+                                <span className="mx-1.5">•</span>
+                                <span>{expense.category.name}</span>
+                              </>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white ml-2">
+                        ₹{parseFloat(expense.amount).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center p-6 text-center bg-white/60 dark:bg-gray-900/40 rounded-xl">
+                  <div className="flex items-center justify-center w-10 h-10 mb-3 bg-gray-100 dark:bg-gray-800 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    No expenses recorded today
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </main>
